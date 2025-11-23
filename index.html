@@ -399,6 +399,17 @@
         .config-section.active {
             display: block;
         }
+
+        .auto-sync-status {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            padding: 10px 15px;
+            border-radius: 5px;
+            font-weight: bold;
+            z-index: 1000;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
     </style>
 </head>
 <body>
@@ -679,6 +690,11 @@
         const LOCKOUT_TIME = 5 * 60 * 1000; // 5 minutos em milissegundos
         let unlockTime = parseInt(localStorage.getItem('unlockTime')) || 0;
 
+        // Controle de sincronização automática
+        let autoSyncEnabled = localStorage.getItem('autoSyncEnabled') === 'true';
+        let lastAutoSync = parseInt(localStorage.getItem('lastAutoSync')) || 0;
+        const AUTO_SYNC_INTERVAL = 30 * 60 * 1000; // 30 minutos em milissegundos
+
         // Inicialização
         document.addEventListener('DOMContentLoaded', function() {
             updateEquipmentList();
@@ -686,7 +702,123 @@
             checkSerialSupport();
             loadConfig();
             checkSecurityStatus();
+            
+            // Iniciar sincronização automática
+            initializeAutoSync();
         });
+
+        // Inicializar sincronização automática
+        function initializeAutoSync() {
+            // Verificar se deve fazer sincronização automática ao iniciar
+            const now = Date.now();
+            const shouldSyncOnStartup = autoSyncEnabled && 
+                googleSheetsConfig.scriptUrl && 
+                (now - lastAutoSync > AUTO_SYNC_INTERVAL || lastAutoSync === 0);
+            
+            if (shouldSyncOnStartup) {
+                setTimeout(() => {
+                    addLogEntry('🔄 Iniciando sincronização automática...', 'command');
+                    autoSyncToGoogleSheets();
+                }, 2000); // Aguardar 2 segundos após o carregamento
+            }
+            
+            // Configurar sincronização periódica se estiver habilitada
+            if (autoSyncEnabled) {
+                setInterval(() => {
+                    if (googleSheetsConfig.scriptUrl) {
+                        addLogEntry('🔄 Sincronização automática periódica...', 'command');
+                        autoSyncToGoogleSheets();
+                    }
+                }, AUTO_SYNC_INTERVAL);
+                
+                addLogEntry('✅ Sincronização automática habilitada', 'command');
+                showAutoSyncStatus('✅ Sincronização automática ativa', 'success');
+            }
+        }
+
+        // Sincronização automática
+        async function autoSyncToGoogleSheets() {
+            const scriptUrl = googleSheetsConfig.scriptUrl;
+            if (!scriptUrl) {
+                showAutoSyncStatus('❌ URL do script não configurada', 'error');
+                return;
+            }
+
+            showAutoSyncStatus('🔄 Sincronizando automaticamente...', 'warning');
+
+            const dataToSync = {
+                equipment: equipmentDatabase,
+                calls: callLog,
+                alarms: activeAlarms,
+                timestamp: new Date().toISOString(),
+                syncType: 'auto'
+            };
+
+            try {
+                const response = await fetch(scriptUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `action=syncData&data=${encodeURIComponent(JSON.stringify(dataToSync))}`
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    lastAutoSync = Date.now();
+                    localStorage.setItem('lastAutoSync', lastAutoSync);
+                    
+                    showAutoSyncStatus('✅ Sincronização automática concluída', 'success');
+                    addLogEntry('✅ Dados sincronizados automaticamente com Google Sheets', 'command');
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+            } catch (error) {
+                showAutoSyncStatus('❌ Erro na sincronização automática', 'error');
+                addLogEntry('❌ Erro na sincronização automática: ' + error.message, 'error');
+            }
+        }
+
+        // Mostrar status da sincronização automática
+        function showAutoSyncStatus(message, type) {
+            // Remove status anterior se existir
+            const existingStatus = document.getElementById('autoSyncStatus');
+            if (existingStatus) {
+                existingStatus.remove();
+            }
+            
+            const statusDiv = document.createElement('div');
+            statusDiv.id = 'autoSyncStatus';
+            statusDiv.className = 'auto-sync-status';
+            
+            switch (type) {
+                case 'success':
+                    statusDiv.style.backgroundColor = '#d4edda';
+                    statusDiv.style.color = '#155724';
+                    statusDiv.style.border = '1px solid #c3e6cb';
+                    break;
+                case 'error':
+                    statusDiv.style.backgroundColor = '#f8d7da';
+                    statusDiv.style.color = '#721c24';
+                    statusDiv.style.border = '1px solid #f5c6cb';
+                    break;
+                case 'warning':
+                    statusDiv.style.backgroundColor = '#fff3cd';
+                    statusDiv.style.color = '#856404';
+                    statusDiv.style.border = '1px solid #ffeaa7';
+                    break;
+            }
+            
+            statusDiv.textContent = message;
+            document.body.appendChild(statusDiv);
+            
+            // Remover após 5 segundos
+            setTimeout(() => {
+                if (statusDiv.parentNode) {
+                    statusDiv.parentNode.removeChild(statusDiv);
+                }
+            }, 5000);
+        }
 
         // Verificar status de segurança
         function checkSecurityStatus() {
@@ -832,6 +964,13 @@
             localStorage.setItem('googleSheetsConfig', JSON.stringify(googleSheetsConfig));
             showSyncStatus('✅ Configuração salva com sucesso!', 'success');
             addLogEntry('✅ Configuração do Google Sheets atualizada', 'command');
+            
+            // Habilitar sincronização automática se a URL estiver configurada
+            if (googleSheetsConfig.scriptUrl && !autoSyncEnabled) {
+                autoSyncEnabled = true;
+                localStorage.setItem('autoSyncEnabled', 'true');
+                initializeAutoSync();
+            }
         }
 
         // Testar conexão com Google Sheets
@@ -852,6 +991,12 @@
                     const result = await response.json();
                     showSyncStatus('✅ Conexão estabelecida com sucesso!', 'success');
                     addLogEntry('✅ Conexão com Google Sheets testada com sucesso', 'command');
+                    
+                    // Habilitar sincronização automática
+                    autoSyncEnabled = true;
+                    localStorage.setItem('autoSyncEnabled', 'true');
+                    showSyncStatus('✅ Sincronização automática habilitada', 'success');
+                    
                 } else {
                     throw new Error(`HTTP ${response.status}`);
                 }
@@ -875,7 +1020,8 @@
                 equipment: equipmentDatabase,
                 calls: callLog,
                 alarms: activeAlarms,
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
+                syncType: 'manual'
             };
 
             try {
@@ -891,6 +1037,11 @@
                     const result = await response.json();
                     showSyncStatus('✅ Dados sincronizados com sucesso!', 'success');
                     addLogEntry('✅ Dados enviados para Google Sheets', 'command');
+                    
+                    // Atualizar último sync
+                    lastAutoSync = Date.now();
+                    localStorage.setItem('lastAutoSync', lastAutoSync);
+                    
                 } else {
                     throw new Error(`HTTP ${response.status}`);
                 }
@@ -921,6 +1072,11 @@
                     addLogEntry('✅ Alarme registrado no Google Sheets', 'command');
                     const result = await response.json();
                     addLogEntry(`📊 Resposta: ${result.message}`, 'data');
+                    
+                    // Atualizar último sync
+                    lastAutoSync = Date.now();
+                    localStorage.setItem('lastAutoSync', lastAutoSync);
+                    
                 } else {
                     throw new Error(`HTTP ${response.status}`);
                 }
@@ -949,6 +1105,11 @@
                     addLogEntry('✅ Ocorrência registrada no Google Sheets', 'command');
                     const result = await response.json();
                     addLogEntry(`📊 Resposta: ${result.message}`, 'data');
+                    
+                    // Atualizar último sync
+                    lastAutoSync = Date.now();
+                    localStorage.setItem('lastAutoSync', lastAutoSync);
+                    
                 }
             } catch (error) {
                 addLogEntry('❌ Erro ao enviar ocorrência para Google Sheets: ' + error.message, 'error');
