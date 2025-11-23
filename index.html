@@ -418,6 +418,168 @@
             padding: 15px;
             margin: 15px 0;
         }
+
+        /* Modal de Configuração do Modem */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+
+        .modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 30px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 800px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid var(--primary-color);
+        }
+
+        .modal-title {
+            color: var(--primary-color);
+            font-size: 24px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .close-btn {
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            font-size: 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .close-btn:hover {
+            background: #c0392b;
+        }
+
+        .baud-rate-selector {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+
+        .baud-rate-btn {
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            background: white;
+            cursor: pointer;
+            text-align: center;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+
+        .baud-rate-btn:hover {
+            border-color: var(--secondary-color);
+            background: #f0f8ff;
+        }
+
+        .baud-rate-btn.active {
+            border-color: var(--success-color);
+            background: var(--success-color);
+            color: white;
+        }
+
+        .command-input-group {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+        }
+
+        .command-input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-family: monospace;
+        }
+
+        .command-log {
+            background: #2c3e50;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 13px;
+            margin-top: 15px;
+        }
+
+        .command-entry {
+            margin-bottom: 5px;
+            padding: 3px;
+        }
+
+        .command-sent {
+            color: #3498db;
+        }
+
+        .command-received {
+            color: #2ecc71;
+        }
+
+        .command-error {
+            color: #e74c3c;
+        }
+
+        .test-results {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .test-result-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .test-result-item:last-child {
+            border-bottom: none;
+        }
+
+        .result-success {
+            color: var(--success-color);
+            font-weight: bold;
+        }
+
+        .result-failure {
+            color: var(--accent-color);
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -566,6 +728,65 @@
             </div>
         </div>
 
+        <!-- Modal de Configuração do Modem -->
+        <div id="modemConfigModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div class="modal-title">
+                        🔧 Configuração do Modem Serial
+                    </div>
+                    <button class="close-btn" onclick="closeModemConfig()">×</button>
+                </div>
+
+                <div class="test-results">
+                    <h3>Resultado do Teste de Comunicação</h3>
+                    <div class="test-result-item">
+                        <span>Comando AT enviado:</span>
+                        <span id="testAtSent" class="result-success">✅ Enviado</span>
+                    </div>
+                    <div class="test-result-item">
+                        <span>Resposta do modem:</span>
+                        <span id="testResponse" class="result-failure">❌ Não recebida</span>
+                    </div>
+                    <div class="test-result-item">
+                        <span>Status da comunicação:</span>
+                        <span id="testStatus" class="result-failure">FALHA</span>
+                    </div>
+                </div>
+
+                <h3>Selecionar Taxa de Comunicação (Baud Rate)</h3>
+                <div class="baud-rate-selector">
+                    <button class="baud-rate-btn" onclick="changeBaudRate(9600)">9600</button>
+                    <button class="baud-rate-btn" onclick="changeBaudRate(19200)">19200</button>
+                    <button class="baud-rate-btn" onclick="changeBaudRate(38400)">38400</button>
+                    <button class="baud-rate-btn" onclick="changeBaudRate(57600)">57600</button>
+                    <button class="baud-rate-btn" onclick="changeBaudRate(115200)">115200</button>
+                </div>
+
+                <h3>Console de Comandos AT</h3>
+                <div class="command-input-group">
+                    <input type="text" id="atCommand" class="command-input" placeholder="Digite comando AT (ex: AT, ATI, AT+CGMM...)" value="AT">
+                    <button class="btn" onclick="sendATCommand()">Enviar Comando</button>
+                    <button class="btn" onclick="testModemConnection()" style="background-color: var(--success-color);">
+                        🔄 Testar Comunicação
+                    </button>
+                </div>
+
+                <div class="command-log" id="modemCommandLog">
+                    <div class="command-entry">🔧 Console de comandos AT - Digite comandos para configurar o modem</div>
+                </div>
+
+                <div style="margin-top: 20px; text-align: center;">
+                    <button class="btn" onclick="applyModemSettings()" style="background-color: var(--success-color);">
+                        ✅ Aplicar Configurações
+                    </button>
+                    <button class="btn" onclick="closeModemConfig()" style="background-color: var(--accent-color);">
+                        ❌ Fechar
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Painel de Alarme Melhorado -->
         <div class="alarm-panel" id="alarmPanel">
             <div class="alarm-header">
@@ -628,6 +849,7 @@
                 <button class="btn" onclick="clearLog()">Limpar Log</button>
                 <button class="btn" onclick="simulateCall()" style="background-color: var(--success-color);">Simular Chamada</button>
                 <button class="btn" onclick="syncToGoogleSheets()" style="background-color: var(--warning-color);">📊 Sincronizar com Google Sheets</button>
+                <button class="btn" onclick="openModemConfig()" style="background-color: var(--primary-color);">🔧 Configurar Modem</button>
             </div>
             
             <div class="serial-log" id="serialLog">
@@ -693,6 +915,9 @@
         let reader = null;
         let serialConnected = false;
         let serialBuffer = '';
+        let currentBaudRate = 9600;
+        let atTestResponse = '';
+        let communicationTestPassed = false;
         
         // Banco de dados local
         let equipmentDatabase = JSON.parse(localStorage.getItem('equipmentDatabase')) || [];
@@ -734,6 +959,294 @@
             // Iniciar sincronização automática
             initializeAutoSync();
         });
+
+        // ========== FUNÇÕES DE CONFIGURAÇÃO DO MODEM ==========
+
+        // Abrir modal de configuração do modem
+        function openModemConfig() {
+            document.getElementById('modemConfigModal').style.display = 'block';
+            // Focar no campo de comando
+            document.getElementById('atCommand').focus();
+        }
+
+        // Fechar modal de configuração do modem
+        function closeModemConfig() {
+            document.getElementById('modemConfigModal').style.display = 'none';
+        }
+
+        // Mudar taxa de comunicação
+        async function changeBaudRate(baudRate) {
+            currentBaudRate = baudRate;
+            
+            // Atualizar botões ativos
+            document.querySelectorAll('.baud-rate-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            addModemLog(`🔄 Baud rate alterado para: ${baudRate}`);
+            
+            // Se estiver conectado, reconectar com nova taxa
+            if (serialConnected && serialPort) {
+                addModemLog(`🔄 Reconectando com baud rate ${baudRate}...`);
+                await disconnectSerial();
+                setTimeout(() => connectSerial(), 1000);
+            }
+        }
+
+        // Enviar comando AT
+        async function sendATCommand() {
+            if (!serialPort || !serialConnected) {
+                addModemLog('❌ Porta serial não conectada', 'error');
+                return;
+            }
+
+            const command = document.getElementById('atCommand').value.trim();
+            if (!command) return;
+
+            addModemLog(`📤 Enviando: ${command}`, 'sent');
+
+            try {
+                const writer = serialPort.writable.getWriter();
+                const textEncoder = new TextEncoder();
+                
+                // Adicionar CR+LF no final do comando
+                const fullCommand = command + '\r\n';
+                await writer.write(textEncoder.encode(fullCommand));
+                writer.releaseLock();
+                
+                // Limpar campo de comando
+                document.getElementById('atCommand').value = '';
+                
+            } catch (error) {
+                addModemLog(`❌ Erro ao enviar comando: ${error.message}`, 'error');
+            }
+        }
+
+        // Testar comunicação do modem
+        async function testModemConnection() {
+            if (!serialPort || !serialConnected) {
+                addModemLog('❌ Porta serial não conectada', 'error');
+                return;
+            }
+
+            addModemLog('🔍 Testando comunicação com comando AT...', 'sent');
+
+            try {
+                const writer = serialPort.writable.getWriter();
+                const textEncoder = new TextEncoder();
+                
+                // Enviar comando AT
+                await writer.write(textEncoder.encode('AT\r\n'));
+                writer.releaseLock();
+                
+                // Atualizar status de teste
+                document.getElementById('testAtSent').textContent = '✅ Enviado';
+                document.getElementById('testAtSent').className = 'result-success';
+                
+                // Aguardar resposta
+                setTimeout(() => {
+                    checkATResponse();
+                }, 1000);
+                
+            } catch (error) {
+                addModemLog(`❌ Erro no teste: ${error.message}`, 'error');
+                document.getElementById('testResponse').textContent = '❌ Erro';
+                document.getElementById('testResponse').className = 'result-failure';
+                document.getElementById('testStatus').textContent = 'FALHA';
+                document.getElementById('testStatus').className = 'result-failure';
+            }
+        }
+
+        // Verificar resposta do comando AT
+        function checkATResponse() {
+            if (atTestResponse.includes('OK')) {
+                document.getElementById('testResponse').textContent = '✅ OK Recebido';
+                document.getElementById('testResponse').className = 'result-success';
+                document.getElementById('testStatus').textContent = 'SUCESSO';
+                document.getElementById('testStatus').className = 'result-success';
+                communicationTestPassed = true;
+                addModemLog('✅ Teste de comunicação: SUCESSO', 'received');
+            } else {
+                document.getElementById('testResponse').textContent = '❌ Resposta incorreta';
+                document.getElementById('testResponse').className = 'result-failure';
+                document.getElementById('testStatus').textContent = 'FALHA';
+                document.getElementById('testStatus').className = 'result-failure';
+                communicationTestPassed = false;
+                addModemLog('❌ Teste de comunicação: FALHA', 'error');
+            }
+            atTestResponse = ''; // Resetar para próximo teste
+        }
+
+        // Aplicar configurações do modem
+        function applyModemSettings() {
+            if (communicationTestPassed) {
+                addModemLog('✅ Configurações aplicadas com sucesso!');
+                addLogEntry('✅ Configuração do modem aplicada com sucesso', 'command');
+                closeModemConfig();
+            } else {
+                addModemLog('⚠️ Teste de comunicação falhou. Verifique as configurações.', 'error');
+            }
+        }
+
+        // Adicionar entrada no log do modem
+        function addModemLog(message, type = 'info') {
+            const log = document.getElementById('modemCommandLog');
+            const entry = document.createElement('div');
+            entry.className = 'command-entry';
+            
+            const now = new Date();
+            const timeString = `[${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}]`;
+            
+            let content = `<span class="log-time">${timeString}</span> `;
+            
+            switch (type) {
+                case 'sent':
+                    content += `<span class="command-sent">📤 ${message}</span>`;
+                    break;
+                case 'received':
+                    content += `<span class="command-received">📥 ${message}</span>`;
+                    break;
+                case 'error':
+                    content += `<span class="command-error">❌ ${message}</span>`;
+                    break;
+                default:
+                    content += `<span class="log-data">${message}</span>`;
+            }
+            
+            entry.innerHTML = content;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        // ========== FUNÇÃO DE TESTE DE COMUNICAÇÃO AUTOMÁTICO ==========
+
+        // Teste de comunicação automático ao conectar
+        async function performCommunicationTest() {
+            if (!serialPort || !serialConnected) return false;
+
+            addLogEntry('🔍 Realizando teste de comunicação automático...', 'command');
+            addModemLog('🔍 Teste automático de comunicação iniciado');
+
+            // Resetar resposta de teste
+            atTestResponse = '';
+            let testPassed = false;
+
+            try {
+                const writer = serialPort.writable.getWriter();
+                const textEncoder = new TextEncoder();
+                
+                // Enviar comando AT
+                await writer.write(textEncoder.encode('AT\r\n'));
+                writer.releaseLock();
+                
+                addLogEntry('📤 Comando AT enviado para teste', 'command');
+                
+                // Aguardar resposta por 2 segundos
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                // Verificar resposta
+                if (atTestResponse.includes('OK')) {
+                    addLogEntry('✅ Teste de comunicação: SUCESSO', 'command');
+                    addModemLog('✅ Teste automático: SUCESSO - Modem respondendo corretamente');
+                    testPassed = true;
+                } else {
+                    addLogEntry('❌ Teste de comunicação: FALHA - Modem não respondeu corretamente', 'error');
+                    addModemLog('❌ Teste automático: FALHA - Sem resposta do modem');
+                    
+                    // Abrir automaticamente a configuração do modem em caso de falha
+                    setTimeout(() => {
+                        openModemConfig();
+                        document.getElementById('testAtSent').textContent = '✅ Enviado';
+                        document.getElementById('testResponse').textContent = '❌ Sem resposta';
+                        document.getElementById('testStatus').textContent = 'FALHA';
+                    }, 1000);
+                }
+                
+            } catch (error) {
+                addLogEntry(`❌ Erro no teste de comunicação: ${error.message}`, 'error');
+                addModemLog(`❌ Erro no teste automático: ${error.message}`, 'error');
+            }
+
+            return testPassed;
+        }
+
+        // ========== FUNÇÕES EXISTENTES ATUALIZADAS ==========
+
+        // Conectar à porta serial (ATUALIZADA)
+        async function connectSerial() {
+            try {
+                serialPort = await navigator.serial.requestPort();
+                await serialPort.open({ 
+                    baudRate: currentBaudRate,
+                    dataBits: 8,
+                    stopBits: 1,
+                    parity: 'none'
+                });
+                
+                serialConnected = true;
+                document.getElementById('connectBtn').disabled = true;
+                document.getElementById('disconnectBtn').disabled = false;
+                document.getElementById('serialStatus').textContent = 'Conectado';
+                
+                addLogEntry(`✅ Conectado à porta serial (${currentBaudRate} baud). Monitorando...`, 'command');
+                
+                // Realizar teste de comunicação automático
+                const testResult = await performCommunicationTest();
+                
+                if (testResult) {
+                    // Iniciar leitura normal se o teste passou
+                    readFromSerial();
+                } else {
+                    // Manter a conexão aberta para configuração
+                    addLogEntry('⚠️ Aguardando configuração do modem...', 'command');
+                }
+                
+            } catch (error) {
+                addLogEntry(`❌ Erro ao conectar: ${error.message}`, 'error');
+            }
+        }
+
+        // Processar uma linha completa recebida (ATUALIZADA)
+        function processCompleteLine(line) {
+            // Capturar resposta do comando AT para teste
+            if (line.includes('AT') || line.includes('OK') || line.includes('ERROR')) {
+                atTestResponse += line + ' ';
+                addModemLog(`📥 ${line}`, 'received');
+            }
+            
+            if (line === 'RING') {
+                addLogEntry('🔔 Chamada recebida (RING)', 'command');
+                return;
+            }
+            
+            if (line.includes('CLIP') || line.includes('NMBR') || line.includes('CID:') || line.includes('DATE') || line.includes('TIME')) {
+                const phoneNumber = extractPhoneNumber(line);
+                if (phoneNumber) {
+                    addLogEntry(`📞 Número detectado: ${phoneNumber}`, 'number');
+                    processIncomingCall(phoneNumber);
+                } else {
+                    if (line.includes('CLIP') || line.includes('NMBR') || line.includes('CID:')) {
+                        addLogEntry(`ℹ️ Linha de identificação: ${line}`, 'data');
+                    }
+                }
+                return;
+            }
+            
+            if (line === 'NO CARRIER' || line.includes('BUSY') || line.includes('NO ANSWER')) {
+                addLogEntry('📴 Chamada encerrada', 'command');
+                return;
+            }
+            
+            if (line.includes('OK') || line.includes('ERROR') || line.includes('CONNECT')) {
+                addLogEntry(`📟 Modem: ${line}`, 'data');
+                return;
+            }
+            
+            addLogEntry(`📝 Dados recebidos: ${line}`, 'data');
+        }
+
+        // ... (o restante do código permanece igual)
 
         // Tentar restaurar configuração da planilha silenciosamente
         async function tryRestoreConfigFromSheets() {
@@ -1308,27 +1821,6 @@
             }
         }
 
-        // Conectar à porta serial
-        async function connectSerial() {
-            try {
-                serialPort = await navigator.serial.requestPort();
-                await serialPort.open({ baudRate: 9600 });
-                
-                serialConnected = true;
-                document.getElementById('connectBtn').disabled = true;
-                document.getElementById('disconnectBtn').disabled = false;
-                document.getElementById('serialStatus').textContent = 'Conectado';
-                
-                addLogEntry('✅ Conectado à porta serial. Monitorando...', 'command');
-                
-                // Iniciar leitura
-                readFromSerial();
-                
-            } catch (error) {
-                addLogEntry(`❌ Erro ao conectar: ${error.message}`, 'error');
-            }
-        }
-
         // Ler dados da serial
         async function readFromSerial() {
             if (!serialPort) return;
@@ -1376,39 +1868,6 @@
                     processCompleteLine(line);
                 }
             }
-        }
-
-        // Processar uma linha completa recebida
-        function processCompleteLine(line) {
-            if (line === 'RING') {
-                addLogEntry('🔔 Chamada recebida (RING)', 'command');
-                return;
-            }
-            
-            if (line.includes('CLIP') || line.includes('NMBR') || line.includes('CID:') || line.includes('DATE') || line.includes('TIME')) {
-                const phoneNumber = extractPhoneNumber(line);
-                if (phoneNumber) {
-                    addLogEntry(`📞 Número detectado: ${phoneNumber}`, 'number');
-                    processIncomingCall(phoneNumber);
-                } else {
-                    if (line.includes('CLIP') || line.includes('NMBR') || line.includes('CID:')) {
-                        addLogEntry(`ℹ️ Linha de identificação: ${line}`, 'data');
-                    }
-                }
-                return;
-            }
-            
-            if (line === 'NO CARRIER' || line.includes('BUSY') || line.includes('NO ANSWER')) {
-                addLogEntry('📴 Chamada encerrada', 'command');
-                return;
-            }
-            
-            if (line.includes('OK') || line.includes('ERROR') || line.includes('CONNECT')) {
-                addLogEntry(`📟 Modem: ${line}`, 'data');
-                return;
-            }
-            
-            addLogEntry(`📝 Dados recebidos: ${line}`, 'data');
         }
 
         // Extrair número de telefone de diferentes formatos de modem
