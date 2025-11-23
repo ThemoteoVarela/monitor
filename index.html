@@ -113,7 +113,6 @@
         
         .log-number {
             color: var(--warning-color);
-            font-weight: bold;
         }
         
         .btn {
@@ -418,6 +417,33 @@
             padding: 15px;
             margin: 15px 0;
         }
+
+        .interruptions-panel {
+            background: #fff3e0;
+            border: 2px solid #ff9800;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+        }
+
+        .interruption-item {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 10px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .interruption-active {
+            border-left: 5px solid #e74c3c;
+        }
+
+        .interruption-finished {
+            border-left: 5px solid #27ae60;
+        }
     </style>
 </head>
 <body>
@@ -448,9 +474,15 @@
                 <div class="status-value" id="callCount">0</div>
             </div>
             <div class="status-item">
-                <div class="status-title">Alertas Ativos</div>
-                <div class="status-value" id="alertCount">0</div>
+                <div class="status-title">Interrupções Ativas</div>
+                <div class="status-value" id="interruptionCount">0</div>
             </div>
+        </div>
+
+        <!-- Painel de Interrupções Ativas -->
+        <div class="card interruptions-panel">
+            <h2>🔧 Interrupções em Andamento</h2>
+            <div id="activeInterruptionsList"></div>
         </div>
 
         <!-- Painel de Senha -->
@@ -485,6 +517,13 @@
                                     Encontre na URL da sua planilha: docs.google.com/spreadsheets/d/<strong>ID_DA_PLANILHA</strong>/edit
                                 </small>
                             </div>
+                        </div>
+
+                        <!-- Configuração de Timeout -->
+                        <div style="margin: 15px 0;">
+                            <label>Tempo de Timeout para Interrupções (minutos):</label>
+                            <input type="number" id="interruptionTimeout" class="config-input" min="1" max="60" value="5">
+                            <small style="color: #666; font-size: 12px;">Tempo sem chamadas para considerar a interrupção finalizada</small>
                         </div>
 
                         <!-- Backup de Configuração -->
@@ -614,7 +653,7 @@
             
             <div class="alarm-actions">
                 <button class="btn btn-danger" onclick="acknowledgeAlarm()">
-                    ✅ Reconhecer Alarme e Registrar Ocorrência
+                    ✅ Reconhecer Alarme
                 </button>
             </div>
         </div>
@@ -699,6 +738,11 @@
         let callLog = JSON.parse(localStorage.getItem('callLog')) || [];
         let activeAlarms = JSON.parse(localStorage.getItem('activeAlarms')) || [];
         
+        // Sistema de Interrupções
+        let activeInterruptions = JSON.parse(localStorage.getItem('activeInterruptions')) || [];
+        let interruptionTimeout = parseInt(localStorage.getItem('interruptionTimeout')) || 5; // minutos
+        let timeoutHandlers = {}; // Controladores de timeout
+        
         // Configuração do Google Sheets
         let googleSheetsConfig = JSON.parse(localStorage.getItem('googleSheetsConfig')) || {
             scriptUrl: '',
@@ -725,6 +769,8 @@
             checkSerialSupport();
             loadConfig();
             checkSecurityStatus();
+            updateInterruptionsList();
+            checkExistingInterruptions();
             
             // Tentar restaurar configuração da planilha ao iniciar
             setTimeout(() => {
@@ -735,9 +781,82 @@
             initializeAutoSync();
         });
 
+        // Verificar interrupções existentes ao iniciar
+        function checkExistingInterruptions() {
+            const now = new Date();
+            activeInterruptions.forEach(interruption => {
+                if (interruption.status === 'EM ANDAMENTO') {
+                    const lastCallTime = new Date(interruption.lastCall);
+                    const timeSinceLastCall = now - lastCallTime;
+                    const timeoutMs = interruptionTimeout * 60 * 1000;
+                    
+                    // Se já passou do timeout, finalizar
+                    if (timeSinceLastCall >= timeoutMs) {
+                        finalizeInterruption(interruption.phoneNumber);
+                    } else {
+                        // Reiniciar timeout com tempo restante
+                        const remainingTime = timeoutMs - timeSinceLastCall;
+                        startInterruptionTimeout(interruption.phoneNumber, remainingTime);
+                    }
+                }
+            });
+            
+            localStorage.setItem('activeInterruptions', JSON.stringify(activeInterruptions));
+            updateInterruptionsList();
+        }
+
+        // Atualizar lista de interrupções
+        function updateInterruptionsList() {
+            const list = document.getElementById('activeInterruptionsList');
+            const activeInterruptions = getActiveInterruptions();
+            
+            if (activeInterruptions.length === 0) {
+                list.innerHTML = '<p style="color: #7f8c8d; text-align: center; padding: 20px;">Nenhuma interrupção em andamento</p>';
+                return;
+            }
+            
+            list.innerHTML = '';
+            activeInterruptions.forEach(interruption => {
+                const div = document.createElement('div');
+                div.className = `interruption-item interruption-active`;
+                
+                const startTime = new Date(interruption.startTime).toLocaleString('pt-BR');
+                const lastCall = new Date(interruption.lastCall).toLocaleString('pt-BR');
+                const now = new Date();
+                const timeSinceLastCall = Math.round((now - new Date(interruption.lastCall)) / 1000 / 60);
+                
+                div.innerHTML = `
+                    <div style="flex: 1;">
+                        <strong>${interruption.equipment}</strong>
+                        <div style="font-size: 14px; color: #666;">
+                            📞 ${interruption.phoneNumber} | 
+                            🔧 ${interruption.codigoOperacional} |
+                            📍 ${interruption.estrutura}
+                        </div>
+                        <div style="font-size: 12px; color: #888;">
+                            🕐 Início: ${startTime} | 
+                            📞 Última: ${lastCall} |
+                            ⏱️ ${timeSinceLastCall}min desde última chamada
+                        </div>
+                        <div style="font-size: 12px; color: #e74c3c; font-weight: bold;">
+                            ${interruption.callCount} chamada(s) recebida(s)
+                        </div>
+                    </div>
+                    <button onclick="manualFinalizeInterruption('${interruption.phoneNumber}')" 
+                            style="background: var(--accent-color); color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer;">
+                        Finalizar
+                    </button>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        function getActiveInterruptions() {
+            return activeInterruptions.filter(int => int.status === 'EM ANDAMENTO');
+        }
+
         // Tentar restaurar configuração da planilha silenciosamente
         async function tryRestoreConfigFromSheets() {
-            // Só tenta restaurar se não tiver configuração local
             if (!googleSheetsConfig.scriptUrl || !googleSheetsConfig.spreadsheetId) {
                 const scriptUrl = document.getElementById('scriptUrl').value;
                 if (scriptUrl) {
@@ -746,7 +865,6 @@
                         if (response.ok) {
                             const result = await response.json();
                             if (result.success && result.config) {
-                                // Configuração encontrada na planilha
                                 googleSheetsConfig = result.config;
                                 localStorage.setItem('googleSheetsConfig', JSON.stringify(googleSheetsConfig));
                                 loadConfig();
@@ -762,7 +880,6 @@
 
         // Inicializar sincronização automática
         function initializeAutoSync() {
-            // Verificar se deve fazer sincronização automática ao iniciar
             const now = Date.now();
             const shouldSyncOnStartup = autoSyncEnabled && 
                 googleSheetsConfig.scriptUrl && 
@@ -772,10 +889,9 @@
                 setTimeout(() => {
                     addLogEntry('🔄 Iniciando sincronização automática...', 'command');
                     autoSyncToGoogleSheets();
-                }, 2000); // Aguardar 2 segundos após o carregamento
+                }, 2000);
             }
             
-            // Configurar sincronização periódica se estiver habilitada
             if (autoSyncEnabled) {
                 setInterval(() => {
                     if (googleSheetsConfig.scriptUrl) {
@@ -803,6 +919,7 @@
                 equipment: equipmentDatabase,
                 calls: callLog,
                 alarms: activeAlarms,
+                interruptions: activeInterruptions,
                 timestamp: new Date().toISOString(),
                 syncType: 'auto'
             };
@@ -845,9 +962,11 @@
             const configToSave = {
                 scriptUrl: googleSheetsConfig.scriptUrl,
                 spreadsheetId: googleSheetsConfig.spreadsheetId,
+                interruptionTimeout: interruptionTimeout,
                 backupTimestamp: new Date().toISOString(),
                 equipmentCount: equipmentDatabase.length,
-                callCount: callLog.length
+                callCount: callLog.length,
+                interruptionCount: getActiveInterruptions().length
             };
 
             try {
@@ -887,15 +1006,18 @@
                 if (response.ok) {
                     const result = await response.json();
                     if (result.success && result.config) {
-                        // Atualizar configuração local
                         googleSheetsConfig = result.config;
+                        if (result.config.interruptionTimeout) {
+                            interruptionTimeout = result.config.interruptionTimeout;
+                            document.getElementById('interruptionTimeout').value = interruptionTimeout;
+                            localStorage.setItem('interruptionTimeout', interruptionTimeout);
+                        }
                         localStorage.setItem('googleSheetsConfig', JSON.stringify(googleSheetsConfig));
                         loadConfig();
                         
                         showConfigBackupStatus('✅ Configuração restaurada da planilha!', 'success');
                         addLogEntry('✅ Configuração restaurada da planilha', 'command');
                         
-                        // Habilitar sincronização automática
                         autoSyncEnabled = true;
                         localStorage.setItem('autoSyncEnabled', 'true');
                         initializeAutoSync();
@@ -932,7 +1054,6 @@
 
         // Mostrar status da sincronização automática
         function showAutoSyncStatus(message, type) {
-            // Remove status anterior se existir
             const existingStatus = document.getElementById('autoSyncStatus');
             if (existingStatus) {
                 existingStatus.remove();
@@ -963,7 +1084,6 @@
             statusDiv.textContent = message;
             document.body.appendChild(statusDiv);
             
-            // Remover após 5 segundos
             setTimeout(() => {
                 if (statusDiv.parentNode) {
                     statusDiv.parentNode.removeChild(statusDiv);
@@ -975,7 +1095,6 @@
         function checkSecurityStatus() {
             const now = Date.now();
             
-            // Verificar se está em período de bloqueio
             if (failedAttempts >= MAX_ATTEMPTS && now < unlockTime) {
                 const remainingTime = Math.ceil((unlockTime - now) / 1000 / 60);
                 showPasswordPanel();
@@ -985,7 +1104,6 @@
                 return;
             }
             
-            // Resetar tentativas se o período de bloqueio expirou
             if (failedAttempts >= MAX_ATTEMPTS && now >= unlockTime) {
                 failedAttempts = 0;
                 localStorage.setItem('failedAttempts', failedAttempts);
@@ -1028,7 +1146,6 @@
             const password = document.getElementById('adminPassword').value;
             const now = Date.now();
             
-            // Verificar se está bloqueado
             if (failedAttempts >= MAX_ATTEMPTS && now < unlockTime) {
                 const remainingTime = Math.ceil((unlockTime - now) / 1000 / 60);
                 document.getElementById('passwordStatus').innerHTML = 
@@ -1037,7 +1154,6 @@
             }
             
             if (password === ADMIN_PASSWORD) {
-                // Senha correta
                 configUnlocked = true;
                 failedAttempts = 0;
                 localStorage.setItem('configUnlocked', 'true');
@@ -1046,12 +1162,10 @@
                 showConfigSection();
                 addLogEntry('✅ Acesso administrativo concedido', 'command');
             } else {
-                // Senha incorreta
                 failedAttempts++;
                 localStorage.setItem('failedAttempts', failedAttempts);
                 
                 if (failedAttempts >= MAX_ATTEMPTS) {
-                    // Bloquear acesso
                     unlockTime = now + LOCKOUT_TIME;
                     localStorage.setItem('unlockTime', unlockTime);
                     const remainingTime = Math.ceil(LOCKOUT_TIME / 1000 / 60);
@@ -1106,24 +1220,27 @@
         function loadConfig() {
             document.getElementById('scriptUrl').value = googleSheetsConfig.scriptUrl || '';
             document.getElementById('spreadsheetId').value = googleSheetsConfig.spreadsheetId || '';
+            document.getElementById('interruptionTimeout').value = interruptionTimeout;
         }
 
         // Salvar configuração
         function saveConfig() {
             googleSheetsConfig.scriptUrl = document.getElementById('scriptUrl').value;
             googleSheetsConfig.spreadsheetId = document.getElementById('spreadsheetId').value;
+            interruptionTimeout = parseInt(document.getElementById('interruptionTimeout').value) || 5;
+            
             localStorage.setItem('googleSheetsConfig', JSON.stringify(googleSheetsConfig));
+            localStorage.setItem('interruptionTimeout', interruptionTimeout);
+            
             showSyncStatus('✅ Configuração salva com sucesso!', 'success');
             addLogEntry('✅ Configuração do Google Sheets atualizada', 'command');
             
-            // Fazer backup automático na planilha
             if (googleSheetsConfig.scriptUrl) {
                 setTimeout(() => {
                     backupConfigToSheets();
                 }, 1000);
             }
             
-            // Habilitar sincronização automática se a URL estiver configurada
             if (googleSheetsConfig.scriptUrl && !autoSyncEnabled) {
                 autoSyncEnabled = true;
                 localStorage.setItem('autoSyncEnabled', 'true');
@@ -1150,7 +1267,6 @@
                     showSyncStatus('✅ Conexão estabelecida com sucesso!', 'success');
                     addLogEntry('✅ Conexão com Google Sheets testada com sucesso', 'command');
                     
-                    // Habilitar sincronização automática
                     autoSyncEnabled = true;
                     localStorage.setItem('autoSyncEnabled', 'true');
                     showSyncStatus('✅ Sincronização automática habilitada', 'success');
@@ -1178,6 +1294,7 @@
                 equipment: equipmentDatabase,
                 calls: callLog,
                 alarms: activeAlarms,
+                interruptions: activeInterruptions,
                 timestamp: new Date().toISOString(),
                 syncType: 'manual'
             };
@@ -1196,7 +1313,6 @@
                     showSyncStatus('✅ Dados sincronizados com sucesso!', 'success');
                     addLogEntry('✅ Dados enviados para Google Sheets', 'command');
                     
-                    // Atualizar último sync
                     lastAutoSync = Date.now();
                     localStorage.setItem('lastAutoSync', lastAutoSync);
                     
@@ -1209,8 +1325,8 @@
             }
         }
 
-        // Enviar alarme para Google Sheets
-        async function sendAlarmToSheets(alarmData) {
+        // Enviar interrupção para Google Sheets
+        async function sendInterruptionToSheets(interruptionData, action) {
             const scriptUrl = googleSheetsConfig.scriptUrl;
             if (!scriptUrl) {
                 addLogEntry('⚠️ URL do Google Apps Script não configurada', 'data');
@@ -1223,15 +1339,13 @@
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
                     },
-                    body: `action=addAlarm&alarmData=${encodeURIComponent(JSON.stringify(alarmData))}`
+                    body: `action=${action}&interruptionData=${encodeURIComponent(JSON.stringify(interruptionData))}`
                 });
 
                 if (response.ok) {
-                    addLogEntry('✅ Alarme registrado no Google Sheets', 'command');
+                    addLogEntry(`✅ Interrupção ${action === 'addInterruption' ? 'registrada' : 'atualizada'} no Google Sheets`, 'command');
                     const result = await response.json();
-                    addLogEntry(`📊 Resposta: ${result.message}`, 'data');
                     
-                    // Atualizar último sync
                     lastAutoSync = Date.now();
                     localStorage.setItem('lastAutoSync', lastAutoSync);
                     
@@ -1239,38 +1353,7 @@
                     throw new Error(`HTTP ${response.status}`);
                 }
             } catch (error) {
-                addLogEntry('❌ Erro ao enviar alarme para Google Sheets: ' + error.message, 'error');
-            }
-        }
-
-        // Enviar ocorrência reconhecida para Google Sheets
-        async function sendAcknowledgmentToSheets(alarmData) {
-            const scriptUrl = googleSheetsConfig.scriptUrl;
-            if (!scriptUrl) {
-                return;
-            }
-
-            try {
-                const response = await fetch(scriptUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
-                    body: `action=acknowledgeAlarm&alarmData=${encodeURIComponent(JSON.stringify(alarmData))}`
-                });
-
-                if (response.ok) {
-                    addLogEntry('✅ Ocorrência registrada no Google Sheets', 'command');
-                    const result = await response.json();
-                    addLogEntry(`📊 Resposta: ${result.message}`, 'data');
-                    
-                    // Atualizar último sync
-                    lastAutoSync = Date.now();
-                    localStorage.setItem('lastAutoSync', lastAutoSync);
-                    
-                }
-            } catch (error) {
-                addLogEntry('❌ Erro ao enviar ocorrência para Google Sheets: ' + error.message, 'error');
+                addLogEntry('❌ Erro ao enviar interrupção para Google Sheets: ' + error.message, 'error');
             }
         }
 
@@ -1297,7 +1380,7 @@
         function updateCounters() {
             document.getElementById('equipmentCount').textContent = equipmentDatabase.length;
             document.getElementById('callCount').textContent = callLog.length;
-            document.getElementById('alertCount').textContent = activeAlarms.length;
+            document.getElementById('interruptionCount').textContent = getActiveInterruptions().length;
         }
 
         // Verificar suporte à API Serial
@@ -1321,7 +1404,6 @@
                 
                 addLogEntry('✅ Conectado à porta serial. Monitorando...', 'command');
                 
-                // Iniciar leitura
                 readFromSerial();
                 
             } catch (error) {
@@ -1474,30 +1556,164 @@
             return null;
         }
 
-        // Processar chamada recebida
+        // Processar chamada recebida - SISTEMA DE INTERRUPÇÕES
         function processIncomingCall(phoneNumber) {
             const equipment = equipmentDatabase.find(eq => eq.telefone === phoneNumber);
             
             if (equipment) {
                 const callTime = new Date();
+                
+                // Verificar se já existe uma interrupção em andamento para este equipamento
+                let existingInterruption = activeInterruptions.find(int => 
+                    int.phoneNumber === phoneNumber && int.status === 'EM ANDAMENTO'
+                );
+                
+                if (existingInterruption) {
+                    // Atualizar última chamada da interrupção existente
+                    existingInterruption.lastCall = callTime.toISOString();
+                    existingInterruption.callCount = (existingInterruption.callCount || 1) + 1;
+                    
+                    // Reiniciar o timeout
+                    startInterruptionTimeout(phoneNumber);
+                    
+                    addLogEntry(`🔄 Interrupção existente - Última chamada atualizada: ${phoneNumber} (${existingInterruption.callCount} chamadas)`, 'command');
+                    
+                    // Atualizar na planilha
+                    sendInterruptionToSheets(existingInterruption, 'updateInterruption');
+                } else {
+                    // Criar nova interrupção
+                    const interruption = {
+                        phoneNumber: phoneNumber,
+                        equipment: equipment.equipamento,
+                        codigoOperacional: equipment.codigoOperacional,
+                        estrutura: equipment.estrutura,
+                        gerencia: equipment.gerencia,
+                        areaRegional: equipment.areaRegional,
+                        alimentador: equipment.alimentador,
+                        startTime: callTime.toISOString(),      // INÍCIO DA INTERRUPÇÃO
+                        lastCall: callTime.toISOString(),       // ÚLTIMA CHAMADA
+                        status: 'EM ANDAMENTO',
+                        callCount: 1
+                    };
+                    
+                    activeInterruptions.push(interruption);
+                    addLogEntry(`🚨 NOVA INTERRUPÇÃO registrada: ${equipment.equipamento}`, 'number');
+                    
+                    // Iniciar monitoramento do timeout
+                    startInterruptionTimeout(phoneNumber);
+                    
+                    // Enviar para planilha
+                    sendInterruptionToSheets(interruption, 'addInterruption');
+                }
+                
+                // Salvar no localStorage
+                localStorage.setItem('activeInterruptions', JSON.stringify(activeInterruptions));
+                
+                // Registrar chamada individual no log
                 callLog.push({
                     phoneNumber,
                     equipment: equipment.equipamento,
-                    timestamp: callTime.toISOString()
+                    timestamp: callTime.toISOString(),
+                    type: existingInterruption ? 'continuing' : 'initial'
                 });
                 localStorage.setItem('callLog', JSON.stringify(callLog));
                 
+                // Ativar alarme visual
                 activateAlarm(equipment, callTime);
+                
+                // Desligar chamada
                 sendATHCommand();
                 
+                // Atualizar interface
                 updateCounters();
+                updateInterruptionsList();
                 
             } else {
                 addLogEntry(`❌ Número ${phoneNumber} não cadastrado no sistema`, 'error');
             }
         }
 
-        // Ativar painel de alarme com todas as informações
+        // Iniciar timeout para interrupção
+        function startInterruptionTimeout(phoneNumber, customTimeout = null) {
+            // Cancelar timeout anterior se existir
+            if (timeoutHandlers[phoneNumber]) {
+                clearTimeout(timeoutHandlers[phoneNumber]);
+            }
+            
+            const timeoutMs = customTimeout || (interruptionTimeout * 60 * 1000);
+            
+            timeoutHandlers[phoneNumber] = setTimeout(() => {
+                checkAndFinalizeInterruption(phoneNumber);
+            }, timeoutMs);
+            
+            addLogEntry(`⏰ Timeout de ${interruptionTimeout} minutos iniciado para ${phoneNumber}`, 'command');
+        }
+
+        // Verificar e finalizar interrupção
+        function checkAndFinalizeInterruption(phoneNumber) {
+            const interruption = activeInterruptions.find(int => 
+                int.phoneNumber === phoneNumber && int.status === 'EM ANDAMENTO'
+            );
+            
+            if (interruption) {
+                const now = new Date();
+                const lastCallTime = new Date(interruption.lastCall);
+                const timeSinceLastCall = now - lastCallTime;
+                const timeoutMs = interruptionTimeout * 60 * 1000;
+                
+                // Se passou mais tempo que o timeout desde a última chamada, finalizar
+                if (timeSinceLastCall >= timeoutMs) {
+                    finalizeInterruption(phoneNumber);
+                } else {
+                    // Se não passou, reiniciar timeout com o tempo restante
+                    const remainingTime = timeoutMs - timeSinceLastCall;
+                    startInterruptionTimeout(phoneNumber, remainingTime);
+                    addLogEntry(`⏰ Timeout reiniciado para ${phoneNumber} - ${Math.round(remainingTime/1000/60)}min restantes`, 'command');
+                }
+            }
+        }
+
+        // Finalizar interrupção
+        function finalizeInterruption(phoneNumber) {
+            const interruption = activeInterruptions.find(int => 
+                int.phoneNumber === phoneNumber && int.status === 'EM ANDAMENTO'
+            );
+            
+            if (interruption) {
+                const now = new Date();
+                interruption.status = 'FINALIZADA';
+                interruption.endTime = now.toISOString();
+                
+                // Calcular duração
+                const startTime = new Date(interruption.startTime);
+                interruption.duration = Math.round((now - startTime) / 1000 / 60); // duração em minutos
+                
+                addLogEntry(`✅ Interrupção FINALIZADA: ${interruption.equipment} - Duração: ${interruption.duration} minutos`, 'command');
+                
+                // Sincronizar finalização com planilha
+                sendInterruptionToSheets(interruption, 'finalizeInterruption');
+                
+                // Limpar timeout handler
+                if (timeoutHandlers[phoneNumber]) {
+                    clearTimeout(timeoutHandlers[phoneNumber]);
+                    delete timeoutHandlers[phoneNumber];
+                }
+                
+                // Atualizar localStorage e interface
+                localStorage.setItem('activeInterruptions', JSON.stringify(activeInterruptions));
+                updateCounters();
+                updateInterruptionsList();
+            }
+        }
+
+        // Finalização manual da interrupção
+        function manualFinalizeInterruption(phoneNumber) {
+            if (confirm('Deseja finalizar esta interrupção manualmente?')) {
+                finalizeInterruption(phoneNumber);
+            }
+        }
+
+        // Ativar painel de alarme
         function activateAlarm(equipment, callTime) {
             document.getElementById('alarmEquipment').textContent = equipment.equipamento;
             document.getElementById('alarmCodigoOperacional').textContent = equipment.codigoOperacional;
@@ -1513,40 +1729,19 @@
             const alarm = {
                 phoneNumber: equipment.telefone,
                 equipment: equipment.equipamento,
-                codigoOperacional: equipment.codigoOperacional,
-                estrutura: equipment.estrutura,
-                gerencia: equipment.gerencia,
-                areaRegional: equipment.areaRegional,
-                alimentador: equipment.alimentador,
-                startTime: callTime.toISOString(),
-                status: 'EM ANDAMENTO'
+                timestamp: callTime.toISOString()
             };
             
             activeAlarms.push(alarm);
             localStorage.setItem('activeAlarms', JSON.stringify(activeAlarms));
             
-            addLogEntry(`🚨 Alarme ativado para: ${equipment.equipamento} (${equipment.telefone})`, 'number');
-            
-            // Enviar para Google Sheets
-            sendAlarmToSheets(alarm);
+            addLogEntry(`🚨 Alarme ativado para: ${equipment.equipamento}`, 'number');
         }
 
         // Reconhecer alarme
         function acknowledgeAlarm() {
             document.getElementById('alarmPanel').classList.remove('alarm-active');
-            
-            if (activeAlarms.length > 0) {
-                const lastAlarm = activeAlarms[activeAlarms.length - 1];
-                lastAlarm.status = 'RECONHECIDO';
-                lastAlarm.acknowledgedTime = new Date().toISOString();
-                localStorage.setItem('activeAlarms', JSON.stringify(activeAlarms));
-                
-                // Enviar reconhecimento para Google Sheets
-                sendAcknowledgmentToSheets(lastAlarm);
-            }
-            
-            addLogEntry('✅ Alarme reconhecido e ocorrência registrada', 'command');
-            updateCounters();
+            addLogEntry('✅ Alarme reconhecido', 'command');
         }
 
         // Enviar comando ATH para desligar chamada
@@ -1703,3 +1898,4 @@
     </script>
 </body>
 </html>
+
